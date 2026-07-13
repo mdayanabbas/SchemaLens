@@ -1,0 +1,9 @@
+{
+  "name": "schemalens-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SchemaLens Next.js frontend",
+  "scripts": {},
+  "dependencies": {},
+  "devDependencies": {}
+}
