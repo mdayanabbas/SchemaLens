@@ -1,4 +1,3 @@
-"""Reusable FastAPI dependencies.
+from app.db.session import get_database_session
 
-Database, authentication and authorization dependencies will be added later.
-"""
+__all__ = ["get_database_session"]

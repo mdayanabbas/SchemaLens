@@ -2,7 +2,7 @@ import functools
 import json
 from typing import Any
 
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Annotated
 
@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     backend_cors_origins: Annotated[list[str], BeforeValidator(parse_cors_origins)] = ["http://localhost:3000"]
     log_level: str = "INFO"
+
+    # Database settings
+    database_url: str = "postgresql+asyncpg://schemalens:schemalens@localhost:5432/schemalens"
+    database_echo: bool = False
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_timeout_seconds: int = 30
+    database_pool_recycle_seconds: int = 1800
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("database_url must be non-empty")
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env",

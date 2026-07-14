@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,7 +9,14 @@ from app.core.config import get_settings
 from app.core.constants import SERVICE_NAME
 from app.core.logging import configure_logging
 from app.core.middleware import RequestIDMiddleware
+from app.db.engine import engine
 from app.schemas.health import LivenessResponse
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -20,6 +29,7 @@ def create_application() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.app_debug,
+        lifespan=lifespan,
     )
 
     application.add_middleware(RequestIDMiddleware)
