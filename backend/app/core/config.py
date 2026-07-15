@@ -42,8 +42,19 @@ class Settings(BaseSettings):
     database_echo: bool = False
     database_pool_size: int = 10
     database_max_overflow: int = 20
-    database_pool_timeout_seconds: int = 30
-    database_pool_recycle_seconds: int = 1800
+    database_pool_timeout_seconds: int = Field(default=30)
+    database_pool_recycle_seconds: int = Field(default=1800)
+
+    # Authentication
+    jwt_secret_key: str
+    jwt_algorithm: str = Field(default="HS256")
+    access_token_expire_minutes: int = Field(default=15)
+    refresh_token_expire_days: int = Field(default=7)
+    refresh_token_pepper: str
+    password_min_length: int = Field(default=12)
+    password_max_length: int = Field(default=128)
+    authentication_issuer: str = Field(default="schemalens-api")
+    authentication_audience: str = Field(default="schemalens-client")
 
     @field_validator("database_url")
     @classmethod
