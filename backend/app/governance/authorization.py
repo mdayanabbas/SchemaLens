@@ -20,6 +20,19 @@ class AuthorizationService:
         self.org_repo = OrganizationRepository(session)
         self.membership_repo = MembershipRepository(session)
 
+    def _is_audit_worthy(self, permission: Permission) -> bool:
+        high_risk = {
+            Permission.ORGANIZATION_MANAGE,
+            Permission.MEMBERS_MANAGE,
+            Permission.POLICIES_MANAGE,
+            Permission.AUDIT_READ,
+            Permission.CONNECTIONS_MANAGE,
+            Permission.BUSINESS_METADATA_APPROVE,
+            Permission.QUERIES_EXECUTE,
+            # future query approval could be BUSINESS_METADATA_APPROVE or something else.
+        }
+        return permission in high_risk
+
     async def evaluate_permission(
         self,
         *,
@@ -149,26 +162,70 @@ class AuthorizationService:
         permission: Permission,
     ) -> AuthorizedOrganizationContext:
         """Require a specific permission and return an AuthorizedOrganizationContext on success."""
+        from app.audit.service import AuditService
+        from app.audit.schemas import AuditEventCreate
+        from app.audit.enums import AuditAction, AuditActorType, AuditOutcome, AuditResourceType
+        
+        audit_service = AuditService(self.session)
+        
         decision = await self.evaluate_permission(
             user=user,
             organization_id=organization_id,
             permission=permission,
         )
         
+        # Prepare common audit metadata
+        audit_metadata = {
+            "requested_permission": permission.value,
+            "authorization_decision_code": decision.decision_code,
+            "selected_organization_id": str(organization_id),
+        }
+        if decision.membership_id:
+            audit_metadata["membership_id"] = str(decision.membership_id)
+            
+        actor_type = AuditActorType.PLATFORM_ADMIN if user.is_platform_admin else AuditActorType.USER
+        
+        # We only record organization ID if it was successfully resolved (not 404),
+        # but the decision provides it anyway.
+        audit_org_id = organization_id if decision.decision_code != "ORGANIZATION_NOT_FOUND" else None
+
         if not decision.allowed:
             # Mask existence for cross-tenant errors where possible, or use standard messages
-            if decision.decision_code in ("ORGANIZATION_NOT_FOUND", "MEMBERSHIP_NOT_FOUND"):
-                # Use a generic message, wait the instructions say: 
-                # "Do not expose whether another organization exists to unauthorized users."
-                # We can just throw a standard 403 or 404 (we'll use AuthorizationError with 403 or 404 appropriately depending on if we are keeping generic permission denied)
-                # "Use generic user-facing denial messages."
-                # "Preserve safe decision codes in exception details where appropriate."
-                pass
+            await audit_service.record_denial(AuditEventCreate(
+                organization_id=audit_org_id,
+                actor_user_id=user.id,
+                actor_type=actor_type,
+                action=AuditAction.AUTHORIZATION_DENIED,
+                outcome=AuditOutcome.DENIED,
+                resource_type=AuditResourceType.AUTHORIZATION,
+                metadata=audit_metadata,
+            ))
             
             raise AuthorizationError(
                 message=decision.safe_reason,
                 code=decision.decision_code,
             )
+        else:
+            if decision.decision_code == "PLATFORM_ADMIN_ALLOWED":
+                await audit_service.record_success(AuditEventCreate(
+                    organization_id=audit_org_id,
+                    actor_user_id=user.id,
+                    actor_type=actor_type,
+                    action=AuditAction.AUTHORIZATION_PLATFORM_ADMIN_BYPASS,
+                    outcome=AuditOutcome.SUCCEEDED,
+                    resource_type=AuditResourceType.AUTHORIZATION,
+                    metadata=audit_metadata,
+                ))
+            elif self._is_audit_worthy(permission):
+                await audit_service.record_success(AuditEventCreate(
+                    organization_id=audit_org_id,
+                    actor_user_id=user.id,
+                    actor_type=actor_type,
+                    action=AuditAction.AUTHORIZATION_ALLOWED,
+                    outcome=AuditOutcome.SUCCEEDED,
+                    resource_type=AuditResourceType.AUTHORIZATION,
+                    metadata=audit_metadata,
+                ))
 
         # 10. Return a safe AuthorizedOrganizationContext.
         role_perms = frozenset()

@@ -11,6 +11,11 @@ from app.models.enums import AuthenticationEventType
 
 
 class AuthenticationEvent(Base, UUIDPrimaryKeyMixin):
+    """
+    DEPRECATED: Use AuditEvent and the general AuditService instead.
+    This model is retained for backwards compatibility and data preservation,
+    but new authentication events should route to AuditEvent.
+    """
     __tablename__ = "authentication_events"
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -125,4 +125,11 @@ def require_permission(
     return permission_dependency
 
 
-__all__ = ["get_database_session", "get_current_user", "get_organization_context", "require_permission"]
+async def get_audit_service(
+    session: AsyncSession = Depends(get_database_session),
+) -> "AuditService":
+    from app.audit.service import AuditService
+    return AuditService(session)
+
+
+__all__ = ["get_database_session", "get_current_user", "get_organization_context", "require_permission", "get_audit_service"]

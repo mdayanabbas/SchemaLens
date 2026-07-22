@@ -17,6 +17,8 @@ class MembershipService:
         self.membership_repo = MembershipRepository(session)
         self.org_repo = OrganizationRepository(session)
         self.user_repo = UserRepository(session)
+        from app.audit.service import AuditService
+        self.audit_service = AuditService(session)
 
     async def add_member_authorized(
         self,
@@ -25,6 +27,9 @@ class MembershipService:
         exact_email: str | None = None,
     ) -> MembershipRead:
         """Create a new membership using an authorized context."""
+        from app.audit.schemas import AuditEventCreate
+        from app.audit.enums import AuditAction, AuditActorType, AuditOutcome, AuditResourceType
+        
         async with transactional(self.session):
             if exact_email:
                 user = await self.user_repo.get_by_email(exact_email)
@@ -56,6 +61,23 @@ class MembershipService:
             self.membership_repo.add(membership)
             await self.membership_repo.flush()
 
+            actor_type = AuditActorType.PLATFORM_ADMIN if context.is_platform_admin else AuditActorType.USER
+            await self.audit_service.record_success(AuditEventCreate(
+                organization_id=context.organization_id,
+                actor_user_id=context.user_id,
+                actor_type=actor_type,
+                action=AuditAction.MEMBERSHIP_CREATED,
+                outcome=AuditOutcome.SUCCEEDED,
+                resource_type=AuditResourceType.MEMBERSHIP,
+                resource_id=membership.id,
+                metadata={
+                    "target_user_id": str(user.id),
+                    "role": membership.role,
+                    "status": membership.status,
+                }
+            ))
+            await self.session.flush()
+
             return MembershipRead.model_validate(membership)
 
     async def get_membership(
@@ -81,6 +103,8 @@ class MembershipService:
         """Update a membership's role or status safely."""
         from app.models.enums import MembershipStatus, OrganizationRole
         from app.core.exceptions import ValidationError
+        from app.audit.schemas import AuditEventCreate
+        from app.audit.enums import AuditAction, AuditActorType, AuditOutcome, AuditResourceType
         
         async with transactional(self.session):
             membership = await self.membership_repo.get_by_id_for_organization(
@@ -94,6 +118,8 @@ class MembershipService:
 
             is_admin = membership.role == OrganizationRole.ORGANIZATION_ADMIN
             is_active = membership.status == MembershipStatus.ACTIVE
+            
+            actor_type = AuditActorType.PLATFORM_ADMIN if context.is_platform_admin else AuditActorType.USER
 
             # Determine if this operation demotes or disables an active admin
             demoting_admin = update_in.role is not None and update_in.role != OrganizationRole.ORGANIZATION_ADMIN
@@ -105,17 +131,82 @@ class MembershipService:
                     context.organization_id
                 )
                 if active_admins <= 1:
+                    # Last administrator protection
+                    await self.audit_service.record_denial(AuditEventCreate(
+                        organization_id=context.organization_id,
+                        actor_user_id=context.user_id,
+                        actor_type=actor_type,
+                        action=AuditAction.MEMBERSHIP_UPDATED,
+                        outcome=AuditOutcome.DENIED,
+                        resource_type=AuditResourceType.MEMBERSHIP,
+                        resource_id=membership.id,
+                        metadata={
+                            "reason": "LAST_ORGANIZATION_ADMIN_REQUIRED",
+                            "target_user_id": str(membership.user_id),
+                        }
+                    ))
+                    await self.session.flush()
                     raise ValidationError(
                         message="Cannot modify or disable the last active organization administrator.",
                         code="LAST_ORGANIZATION_ADMIN_REQUIRED",
                     )
             
-            if update_in.role is not None:
+            changed_fields = []
+            previous_role = None
+            new_role = None
+            previous_status = None
+            new_status = None
+            
+            if update_in.role is not None and membership.role != update_in.role:
+                previous_role = membership.role
                 membership.role = update_in.role
-            if update_in.status is not None:
+                new_role = update_in.role
+                changed_fields.append("role")
+            if update_in.status is not None and membership.status != update_in.status:
+                previous_status = membership.status
                 membership.status = update_in.status
+                new_status = update_in.status
+                changed_fields.append("status")
                 
             await self.membership_repo.flush()
+            
+            if changed_fields:
+                await self.audit_service.record_success(AuditEventCreate(
+                    organization_id=context.organization_id,
+                    actor_user_id=context.user_id,
+                    actor_type=actor_type,
+                    action=AuditAction.MEMBERSHIP_UPDATED,
+                    outcome=AuditOutcome.SUCCEEDED,
+                    resource_type=AuditResourceType.MEMBERSHIP,
+                    resource_id=membership.id,
+                    metadata={"changed_fields": changed_fields, "target_user_id": str(membership.user_id)}
+                ))
+                
+                if new_role:
+                    await self.audit_service.record_success(AuditEventCreate(
+                        organization_id=context.organization_id,
+                        actor_user_id=context.user_id,
+                        actor_type=actor_type,
+                        action=AuditAction.MEMBERSHIP_ROLE_CHANGED,
+                        outcome=AuditOutcome.SUCCEEDED,
+                        resource_type=AuditResourceType.MEMBERSHIP,
+                        resource_id=membership.id,
+                        metadata={"target_user_id": str(membership.user_id), "previous_role": previous_role, "new_role": new_role}
+                    ))
+                    
+                if new_status == MembershipStatus.DISABLED:
+                    await self.audit_service.record_success(AuditEventCreate(
+                        organization_id=context.organization_id,
+                        actor_user_id=context.user_id,
+                        actor_type=actor_type,
+                        action=AuditAction.MEMBERSHIP_DISABLED,
+                        outcome=AuditOutcome.SUCCEEDED,
+                        resource_type=AuditResourceType.MEMBERSHIP,
+                        resource_id=membership.id,
+                        metadata={"target_user_id": str(membership.user_id), "previous_status": previous_status, "new_status": new_status}
+                    ))
+                await self.session.flush()
+
             return MembershipRead.model_validate(membership)
 
     async def disable_member_authorized(
