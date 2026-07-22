@@ -57,3 +57,18 @@ class OrganizationRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrganizationSummaryRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    status: OrganizationStatus
+    role: "OrganizationRole | None" = None
+    is_platform_admin_access: bool = False
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+from app.models.enums import OrganizationRole
+OrganizationSummaryRead.model_rebuild()

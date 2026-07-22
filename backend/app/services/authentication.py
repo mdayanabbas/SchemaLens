@@ -3,13 +3,15 @@ from datetime import datetime, UTC
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.enums import AuditAction, AuditActorType, AuditOutcome, AuditResourceType
+from app.audit.schemas import AuditEventCreate
+from app.audit.service import AuditService
 from app.core.config import Settings
 from app.core.exceptions import AppError
 from app.core.passwords import PasswordService
 from app.core.tokens import TokenService
 from app.db.transactions import transactional
-from app.models.authentication_event import AuthenticationEvent
-from app.models.enums import AuthenticationEventType, RefreshTokenStatus
+from app.models.enums import RefreshTokenStatus
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.repositories.refresh_token import RefreshTokenRepository
@@ -30,25 +32,36 @@ class AuthenticationService:
         self.refresh_repo = RefreshTokenRepository(session)
         self.password_service = PasswordService()
         self.token_service = TokenService(settings)
+        self.audit_service = AuditService(session)
 
     async def _record_event(
         self,
-        event_type: AuthenticationEventType,
-        outcome: str,
-        user_id: uuid.UUID | None = None,
+        action: AuditAction,
+        outcome: AuditOutcome,
+        actor_user_id: uuid.UUID | None = None,
         email: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        event = AuthenticationEvent(
-            user_id=user_id,
-            event_type=event_type,
+        metadata = metadata or {}
+        if email:
+            metadata["email_hash"] = self.token_service.hash_refresh_token(email.lower().strip())
+            
+        # Determine actor type safely
+        actor_type = AuditActorType.USER if actor_user_id else AuditActorType.ANONYMOUS
+            
+        event_in = AuditEventCreate(
+            actor_user_id=actor_user_id,
+            actor_type=actor_type,
+            action=action,
             outcome=outcome,
-            email_hash=self.token_service.hash_refresh_token(email.lower().strip()) if email else None,
+            resource_type=AuditResourceType.AUTHENTICATION,
             ip_hash=self.token_service.hash_optional_ip_address(ip_address),
             user_agent_hash=self.token_service.hash_optional_user_agent(user_agent),
+            metadata=metadata,
         )
-        self.session.add(event)
+        await self.audit_service.record(event_in)
 
     async def set_initial_password(
         self, user_id: uuid.UUID, password: str, password_confirmation: str
@@ -64,7 +77,12 @@ class AuthenticationService:
             password_hash = self.password_service.hash_password(password)
             await self.user_repo.set_password_hash(user.id, password_hash)
             await self.refresh_repo.revoke_all_for_user(user.id)
-            await self._record_event(AuthenticationEventType.PASSWORD_CHANGED, "success", user_id=user.id)
+            
+            await self._record_event(
+                action=AuditAction.AUTH_PASSWORD_CHANGED, 
+                outcome=AuditOutcome.SUCCEEDED, 
+                actor_user_id=user.id
+            )
             await self.session.flush()
 
     async def login(
@@ -76,12 +94,27 @@ class AuthenticationService:
             # Dummy verification to resist timing attacks if user missing or password unset
             if not user or not user.password_hash:
                 self.password_service.verify_password(password, self.password_service.hash_password("dummy"))
-                await self._record_event(AuthenticationEventType.LOGIN_FAILED, "invalid_credentials", email=email, ip_address=ip_address, user_agent=user_agent)
+                await self._record_event(
+                    action=AuditAction.AUTH_LOGIN_FAILED, 
+                    outcome=AuditOutcome.FAILED,
+                    email=email, 
+                    ip_address=ip_address, 
+                    user_agent=user_agent,
+                    metadata={"reason": "invalid_credentials"}
+                )
                 await self.session.flush()
                 raise AuthenticationException()
 
             if not self.password_service.verify_password(password, user.password_hash):
-                await self._record_event(AuthenticationEventType.LOGIN_FAILED, "invalid_credentials", user_id=user.id, email=email, ip_address=ip_address, user_agent=user_agent)
+                await self._record_event(
+                    action=AuditAction.AUTH_LOGIN_FAILED, 
+                    outcome=AuditOutcome.FAILED,
+                    actor_user_id=user.id, 
+                    email=email, 
+                    ip_address=ip_address, 
+                    user_agent=user_agent,
+                    metadata={"reason": "invalid_credentials"}
+                )
                 await self.session.flush()
                 raise AuthenticationException()
 
@@ -103,7 +136,14 @@ class AuthenticationService:
             )
             self.refresh_repo.add(refresh_record)
 
-            await self._record_event(AuthenticationEventType.LOGIN_SUCCEEDED, "success", user_id=user.id, ip_address=ip_address, user_agent=user_agent)
+            await self._record_event(
+                action=AuditAction.AUTH_LOGIN_SUCCEEDED,
+                outcome=AuditOutcome.SUCCEEDED, 
+                actor_user_id=user.id, 
+                ip_address=ip_address, 
+                user_agent=user_agent,
+                metadata={"session_family_id": str(family_id)}
+            )
             await self.session.flush()
 
             return TokenResponse(
@@ -131,7 +171,14 @@ class AuthenticationService:
                 # Reuse detected
                 await self.refresh_repo.revoke_family(record.user_id, record.family_id)
                 await self.refresh_repo.mark_compromised(record.id)
-                await self._record_event(AuthenticationEventType.REFRESH_TOKEN_REUSE_DETECTED, "compromised", user_id=record.user_id, ip_address=ip_address, user_agent=user_agent)
+                await self._record_event(
+                    action=AuditAction.AUTH_REFRESH_TOKEN_REUSE_DETECTED,
+                    outcome=AuditOutcome.DENIED,
+                    actor_user_id=record.user_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    metadata={"session_family_id": str(record.family_id), "affected_token_record_id": str(record.id), "family_revoked": True}
+                )
                 await self.session.flush()
                 raise AuthenticationException("Session compromised.", code="TOKEN_REUSE_DETECTED")
 
@@ -163,7 +210,19 @@ class AuthenticationService:
             record.last_used_user_agent_hash = self.token_service.hash_optional_user_agent(user_agent)
             
             access_token, _ = self.token_service.create_access_token(user.id)
-            await self._record_event(AuthenticationEventType.TOKEN_REFRESHED, "success", user_id=user.id, ip_address=ip_address, user_agent=user_agent)
+            
+            await self._record_event(
+                action=AuditAction.AUTH_TOKEN_REFRESHED,
+                outcome=AuditOutcome.SUCCEEDED,
+                actor_user_id=user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={
+                    "session_family_id": str(record.family_id),
+                    "old_token_record_id": str(record.id),
+                    "new_token_record_id": str(new_record.id),
+                }
+            )
             await self.session.flush()
             
             return TokenResponse(
@@ -179,12 +238,26 @@ class AuthenticationService:
             record = await self.refresh_repo.get_by_hash(token_hash, lock=True)
             if record:
                 await self.refresh_repo.mark_revoked(record.id)
-                await self._record_event(AuthenticationEventType.LOGOUT_SUCCEEDED, "success", user_id=record.user_id, ip_address=ip_address, user_agent=user_agent)
+                await self._record_event(
+                    action=AuditAction.AUTH_LOGOUT,
+                    outcome=AuditOutcome.SUCCEEDED,
+                    actor_user_id=record.user_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    metadata={"token_record_id": str(record.id), "already_revoked": record.status != RefreshTokenStatus.ACTIVE}
+                )
             await self.session.flush()
 
     async def revoke_all_user_sessions(self, user_id: uuid.UUID) -> None:
         async with transactional(self.session):
-            await self.refresh_repo.revoke_all_for_user(user_id)
+            revoked_count = await self.refresh_repo.revoke_all_for_user(user_id)
+            
+            await self._record_event(
+                action=AuditAction.AUTH_SESSIONS_REVOKED,
+                outcome=AuditOutcome.SUCCEEDED,
+                actor_user_id=user_id,
+                metadata={"revoked_count": revoked_count}
+            )
             await self.session.flush()
 
     async def authenticate_access_token(self, token: str) -> User:
