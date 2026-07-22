@@ -85,3 +85,22 @@ async def get_current_user_profile(
 ):
     """Get the currently authenticated user's profile safely."""
     return current_user
+
+
+@router.get("/me/organizations")
+async def get_current_user_organizations(
+    limit: int = 100,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_database_session),
+):
+    """Get the active organization memberships for the current user."""
+    from app.services.organization import OrganizationService
+    from app.schemas.organization import OrganizationSummaryRead
+    
+    org_service = OrganizationService(session)
+    return await org_service.list_for_user(
+        user=current_user,
+        offset=offset,
+        limit=limit,
+    )

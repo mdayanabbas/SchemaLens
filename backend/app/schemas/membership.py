@@ -27,3 +27,17 @@ class MembershipRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MembershipDetailedRead(BaseModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    user_id: uuid.UUID
+    user_email: str
+    user_display_name: str
+    role: OrganizationRole
+    status: MembershipStatus
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

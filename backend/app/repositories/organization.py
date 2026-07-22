@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,19 @@ class OrganizationRepository(BaseRepository[Organization, str]):
         """Get an organization by its unique slug."""
         normalized_slug = slug.lower().strip()
         stmt = select(Organization).where(Organization.slug == normalized_slug)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_active_by_id(
+        self,
+        organization_id: uuid.UUID,
+    ) -> Organization | None:
+        """Get an active organization by its ID."""
+        from app.models.enums import OrganizationStatus
+        stmt = select(Organization).where(
+            Organization.id == organization_id,
+            Organization.status == OrganizationStatus.ACTIVE,
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

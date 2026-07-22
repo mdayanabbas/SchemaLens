@@ -18,19 +18,19 @@ class MembershipService:
         self.org_repo = OrganizationRepository(session)
         self.user_repo = UserRepository(session)
 
-    async def create_membership(
-        self, organization_id: uuid.UUID, membership_in: MembershipCreate
+    async def add_member_authorized(
+        self,
+        context: "AuthorizedOrganizationContext",
+        membership_in: MembershipCreate,
+        exact_email: str | None = None,
     ) -> MembershipRead:
-        """Create a new membership linking a user to an organization."""
+        """Create a new membership using an authorized context."""
         async with transactional(self.session):
-            org = await self.org_repo.get_by_id(organization_id)
-            if not org:
-                raise NotFoundError(
-                    message="Organization not found.",
-                    code="ORGANIZATION_NOT_FOUND",
-                )
-            
-            user = await self.user_repo.get_by_id(membership_in.user_id)
+            if exact_email:
+                user = await self.user_repo.get_by_email(exact_email)
+            else:
+                user = await self.user_repo.get_by_id(membership_in.user_id)
+
             if not user:
                 raise NotFoundError(
                     message="User not found.",
@@ -38,18 +38,18 @@ class MembershipService:
                 )
 
             exists = await self.membership_repo.membership_exists(
-                user_id=membership_in.user_id,
-                organization_id=organization_id,
+                user_id=user.id,
+                organization_id=context.organization_id,
             )
             if exists:
                 raise ConflictError(
                     message="User is already a member of this organization.",
-                    code="MEMBERSHIP_CONFLICT",
+                    code="MEMBERSHIP_ALREADY_EXISTS",
                 )
 
             membership = OrganizationMembership(
-                organization_id=organization_id,
-                user_id=membership_in.user_id,
+                organization_id=context.organization_id,
+                user_id=user.id,
                 role=membership_in.role,
                 status=membership_in.status,
             )
@@ -72,19 +72,43 @@ class MembershipService:
             )
         return MembershipRead.model_validate(membership)
 
-    async def update_membership(
-        self, organization_id: uuid.UUID, membership_id: uuid.UUID, update_in: MembershipUpdate
+    async def update_member_authorized(
+        self,
+        context: "AuthorizedOrganizationContext",
+        membership_id: uuid.UUID,
+        update_in: MembershipUpdate,
     ) -> MembershipRead:
-        """Update a membership's role or status."""
+        """Update a membership's role or status safely."""
+        from app.models.enums import MembershipStatus, OrganizationRole
+        from app.core.exceptions import ValidationError
+        
         async with transactional(self.session):
             membership = await self.membership_repo.get_by_id_for_organization(
-                membership_id=membership_id, organization_id=organization_id
+                membership_id=membership_id, organization_id=context.organization_id
             )
             if not membership:
                 raise NotFoundError(
                     message="Membership not found.",
                     code="MEMBERSHIP_NOT_FOUND",
                 )
+
+            is_admin = membership.role == OrganizationRole.ORGANIZATION_ADMIN
+            is_active = membership.status == MembershipStatus.ACTIVE
+
+            # Determine if this operation demotes or disables an active admin
+            demoting_admin = update_in.role is not None and update_in.role != OrganizationRole.ORGANIZATION_ADMIN
+            disabling_admin = update_in.status is not None and update_in.status != MembershipStatus.ACTIVE
+
+            if is_admin and is_active and (demoting_admin or disabling_admin):
+                # Lock row if necessary, count admins
+                active_admins = await self.membership_repo.count_active_admins_for_organization(
+                    context.organization_id
+                )
+                if active_admins <= 1:
+                    raise ValidationError(
+                        message="Cannot modify or disable the last active organization administrator.",
+                        code="LAST_ORGANIZATION_ADMIN_REQUIRED",
+                    )
             
             if update_in.role is not None:
                 membership.role = update_in.role
@@ -94,21 +118,44 @@ class MembershipService:
             await self.membership_repo.flush()
             return MembershipRead.model_validate(membership)
 
-    async def list_organization_memberships(
-        self, organization_id: uuid.UUID, limit: int = 100, offset: int = 0
-    ) -> list[MembershipRead]:
-        """List memberships for a specific organization."""
-        org = await self.org_repo.get_by_id(organization_id)
-        if not org:
-            raise NotFoundError(
-                message="Organization not found.",
-                code="ORGANIZATION_NOT_FOUND",
-            )
+    async def disable_member_authorized(
+        self,
+        context: "AuthorizedOrganizationContext",
+        membership_id: uuid.UUID,
+    ) -> MembershipRead:
+        """Disable a membership safely."""
+        from app.models.enums import MembershipStatus
+        update_in = MembershipUpdate(status=MembershipStatus.DISABLED)
+        return await self.update_member_authorized(context, membership_id, update_in)
 
+    async def list_organization_memberships_authorized(
+        self,
+        context: "AuthorizedOrganizationContext",
+        limit: int = 100,
+        offset: int = 0,
+        role: "OrganizationRole | None" = None,
+        status: "MembershipStatus | None" = None,
+    ) -> list["MembershipDetailedRead"]:
+        """List memberships for a specific organization using authorized context."""
+        from app.schemas.membership import MembershipDetailedRead
+        
         memberships = await self.membership_repo.list_for_organization(
-            organization_id=organization_id, limit=limit, offset=offset
+            organization_id=context.organization_id, limit=limit, offset=offset, role=role, status=status
         )
-        return [MembershipRead.model_validate(m) for m in memberships]
+        return [
+            MembershipDetailedRead(
+                id=m.id,
+                organization_id=m.organization_id,
+                user_id=m.user_id,
+                user_email=m.user.email,
+                user_display_name=m.user.display_name,
+                role=m.role,
+                status=m.status,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+            for m in memberships
+        ]
 
     async def list_user_memberships(
         self, user_id: uuid.UUID, limit: int = 100, offset: int = 0
