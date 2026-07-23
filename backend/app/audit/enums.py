@@ -59,6 +59,11 @@ class AuditAction(StrEnum):
 
     AUDIT_EVENTS_VIEWED = "audit.events_viewed"
 
+    CONNECTION_CREATED = "connection.created"
+    CONNECTION_UPDATED = "connection.updated"
+    CONNECTION_DISABLED = "connection.disabled"
+    CONNECTION_POLICY_UPDATED = "connection.policy_updated"
+
 class AuditEventSource(StrEnum):
     API = "api"
     BOOTSTRAP = "bootstrap"
