@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     authentication_issuer: str = Field(default="schemalens-api")
     authentication_audience: str = Field(default="schemalens-client")
 
+    # Secrets
+    local_secret_master_key: str | None = Field(default=None)
+    local_secret_key_version: str = Field(default="v1")
+    secret_value_max_bytes: int = Field(default=16384)
+    secret_reference_max_length: int = Field(default=512)
+    
+    # AWS Secrets Manager
+    aws_region: str | None = Field(default=None)
+    aws_secrets_manager_endpoint_url: str | None = Field(default=None)
+    aws_secrets_manager_timeout_seconds: int = Field(default=5)
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:

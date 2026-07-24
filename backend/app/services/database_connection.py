@@ -18,6 +18,7 @@ from app.schemas.database_connection import (
     DatabaseConnectionUpdate,
 )
 from app.services.connection_validation import validate_production_ssl, redact_secret_reference
+from app.secrets.service import SecretResolutionService
 
 
 class DatabaseConnectionService:
@@ -25,6 +26,7 @@ class DatabaseConnectionService:
         self.session = session
         self.repository = DatabaseConnectionRepository(session)
         self.audit_service = audit_service
+        self.secret_resolution_service = SecretResolutionService(session, audit_service)
 
     async def create_connection(
         self,
@@ -35,11 +37,18 @@ class DatabaseConnectionService:
         # 1. Validate production SSL requirement
         validate_production_ssl(schema.environment, schema.ssl_mode)
 
-        # 2. Check name uniqueness
+        # 2. Validate secret reference
+        await self.secret_resolution_service.validate_connection_reference(
+            context=context,
+            provider_type=schema.secret_provider,
+            reference=schema.secret_reference,
+        )
+
+        # 3. Check name uniqueness
         if await self.repository.name_exists_for_organization(schema.name, context.organization_id):
             raise ConflictError("A connection with this name already exists.", code="CONNECTION_NAME_ALREADY_EXISTS")
 
-        # 3. Create the DatabaseConnection
+        # 4. Create the DatabaseConnection
         connection = DatabaseConnection(
             id=uuid.uuid4(),
             organization_id=context.organization_id,
@@ -163,6 +172,16 @@ class DatabaseConnectionService:
         if "name" in update_data and update_data["name"] != connection.name:
             if await self.repository.name_exists_for_organization(update_data["name"], context.organization_id):
                 raise ConflictError("A connection with this name already exists.", code="CONNECTION_NAME_ALREADY_EXISTS")
+                
+        # Validate secret reference if changed
+        if "secret_provider" in update_data or "secret_reference" in update_data:
+            new_provider = update_data.get("secret_provider", connection.secret_provider)
+            new_reference = update_data.get("secret_reference", connection.secret_reference)
+            await self.secret_resolution_service.validate_connection_reference(
+                context=context,
+                provider_type=new_provider,
+                reference=new_reference,
+            )
                 
         # Check if connectivity fields are changing
         connectivity_fields = {"host", "port", "database_name", "ssl_mode", "secret_provider", "secret_reference"}
