@@ -16,6 +16,7 @@ from .connection_enums import (
 )
 from .database_connection import DatabaseConnection
 from .connection_policy import ConnectionPolicy
+from .stored_secret import StoredSecret
 
 __all__ = [
     "Organization",
@@ -26,6 +27,7 @@ __all__ = [
     "AuditEvent",
     "DatabaseConnection",
     "ConnectionPolicy",
+    "StoredSecret",
     "OrganizationStatus",
     "UserStatus",
     "MembershipStatus",

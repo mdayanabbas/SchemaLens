@@ -23,6 +23,8 @@ class AuditResourceType(StrEnum):
     # Future bricks:
     DATABASE_CONNECTION = "database_connection"
     CONNECTION_POLICY = "connection_policy"
+    STORED_SECRET = "stored_secret"
+    SECRET_PROVIDER = "secret_provider"
     SCHEMA_SCAN = "schema_scan"
     SCHEMA_SNAPSHOT = "schema_snapshot"
     BUSINESS_METADATA = "business_metadata"
@@ -63,6 +65,12 @@ class AuditAction(StrEnum):
     CONNECTION_UPDATED = "connection.updated"
     CONNECTION_DISABLED = "connection.disabled"
     CONNECTION_POLICY_UPDATED = "connection.policy_updated"
+
+    SECRET_LOCAL_CREATED = "secret.local_created"
+    SECRET_LOCAL_ROTATED = "secret.local_rotated"
+    SECRET_LOCAL_DISABLED = "secret.local_disabled"
+    SECRET_RESOLVED = "secret.resolved"
+    SECRET_RESOLUTION_FAILED = "secret.resolution_failed"
 
 class AuditEventSource(StrEnum):
     API = "api"
