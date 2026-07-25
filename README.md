@@ -26,6 +26,48 @@ SchemaLens is being built systematically in "bricks". The following capabilities
 - **Cryptography:** Cryptography (AES-256-GCM)
 - **Cloud Integration:** Boto3 (AWS)
 
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+    Client["Client / User"] -->|HTTPS| API["FastAPI Application"]
+    
+    subgraph "SchemaLens Backend"
+        API --> Auth["Authentication & RBAC"]
+        Auth --> Governance["Governance Context"]
+        Governance --> API
+        
+        API --> SecretsSvc["Secret Resolution Service"]
+        SecretsSvc --> Providers["Secret Providers"]
+        
+        subgraph "Secret Providers"
+            Providers --> EnvProv["Environment Provider"]
+            Providers --> AWSProv["AWS Secrets Manager Provider"]
+            Providers --> LocalProv["Local Encrypted Provider"]
+        end
+        
+        API --> DBConn["Database Connections Service"]
+        DBConn -.->|Validates credentials| SecretsSvc
+        
+        API --> Audit["Audit Service"]
+    end
+    
+    LocalProv -->|AES-256-GCM| LocalCrypto["Encryption Service"]
+    
+    subgraph "Data Persistence (PostgreSQL)"
+        API --> DB[(Application Database)]
+        LocalCrypto -->|Ciphertext| DB
+        Audit -->|Append Only| DB
+        DBConn --> DB
+    end
+    
+    AWSProv -->|Boto3| AWSSM[("AWS Secrets Manager")]
+    
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px;
+    classDef highlight fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
+    class SecretsSvc,LocalCrypto highlight;
+```
+
 ### Project Structure
 
 - `backend/app/api`: FastAPI route handlers and dependencies.
