@@ -132,4 +132,66 @@ async def get_audit_service(
     return AuditService(session)
 
 
-__all__ = ["get_database_session", "get_current_user", "get_organization_context", "require_permission", "get_audit_service"]
+def get_connection_pool_registry(request: Request) -> "ConnectionPoolRegistry":
+    from app.connectors.pool_registry import ConnectionPoolRegistry
+    return request.app.state.pool_registry
+
+
+async def get_secret_resolution_service(
+    session: AsyncSession = Depends(get_database_session),
+    audit_service: "AuditService" = Depends(get_audit_service),
+) -> "SecretResolutionService":
+    from app.secrets.service import SecretResolutionService
+    return SecretResolutionService(session, audit_service)
+
+
+async def get_connector_registry(
+    settings: Settings = Depends(get_settings),
+    pool_registry: "ConnectionPoolRegistry" = Depends(get_connection_pool_registry),
+    secret_resolution_service: "SecretResolutionService" = Depends(get_secret_resolution_service),
+) -> "ConnectorRegistry":
+    from app.connectors.factory import build_connector_registry
+    from app.connectors.postgres.connector import PostgreSQLConnector
+    from app.connectors.postgres.engine_factory import PostgreSQLEngineFactory
+
+    engine_factory = PostgreSQLEngineFactory(settings)
+    postgres_connector = PostgreSQLConnector(
+        settings=settings,
+        secret_resolution_service=secret_resolution_service,
+        engine_factory=engine_factory,
+        pool_registry=pool_registry,
+    )
+    return build_connector_registry(postgres_connector)
+
+
+async def get_database_connection_service(
+    session: AsyncSession = Depends(get_database_session),
+    audit_service: "AuditService" = Depends(get_audit_service),
+    pool_registry: "ConnectionPoolRegistry" = Depends(get_connection_pool_registry),
+) -> "DatabaseConnectionService":
+    from app.services.database_connection import DatabaseConnectionService
+    return DatabaseConnectionService(session, audit_service, pool_registry)
+
+
+async def get_connection_test_service(
+    session: AsyncSession = Depends(get_database_session),
+    audit_service: "AuditService" = Depends(get_audit_service),
+    connector_registry: "ConnectorRegistry" = Depends(get_connector_registry),
+) -> "ConnectionTestService":
+    from app.services.connection_test import ConnectionTestService
+    return ConnectionTestService(session, audit_service, connector_registry)
+
+
+__all__ = [
+    "get_database_session",
+    "get_current_user",
+    "get_organization_context",
+    "require_permission",
+    "get_audit_service",
+    "get_connection_pool_registry",
+    "get_connector_registry",
+    "get_secret_resolution_service",
+    "get_database_connection_service",
+    "get_connection_test_service",
+]
+

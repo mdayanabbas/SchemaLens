@@ -3,11 +3,19 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_audit_service, get_database_session, require_permission
+from app.api.dependencies import (
+    get_audit_service,
+    get_current_user,
+    get_database_session,
+    get_connection_test_service,
+    require_permission,
+)
 from app.audit.service import AuditService
 from app.governance.context import AuthorizedOrganizationContext
 from app.governance.permissions import Permission
+from app.models.user import User
 from app.schemas.connection_policy import ConnectionPolicyRead, ConnectionPolicyUpdate
+from app.schemas.connection_test import ConnectionTestResponse
 from app.schemas.database_connection import (
     DatabaseConnectionCreate,
     DatabaseConnectionRead,
@@ -15,7 +23,9 @@ from app.schemas.database_connection import (
     DatabaseConnectionUpdate,
 )
 from app.services.connection_policy import ConnectionPolicyService
+from app.services.connection_test import ConnectionTestService
 from app.services.database_connection import DatabaseConnectionService
+
 
 
 router = APIRouter()
@@ -124,3 +134,18 @@ async def update_connection_policy(
 ):
     """Update the policy for a database connection."""
     return await service.update_policy(connection_id, schema, context)
+
+
+@router.post("/{connection_id}/test", response_model=ConnectionTestResponse)
+async def test_connection(
+    connection_id: uuid.UUID,
+    context: AuthorizedOrganizationContext = Depends(require_permission(Permission.CONNECTIONS_TEST)),
+    acting_user: User = Depends(get_current_user),
+    service: ConnectionTestService = Depends(get_connection_test_service),
+):
+    """Test the database connection and configuration."""
+    return await service.test_connection(
+        context=context,
+        acting_user=acting_user,
+        connection_id=connection_id,
+    )

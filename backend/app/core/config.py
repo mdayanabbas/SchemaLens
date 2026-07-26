@@ -2,7 +2,7 @@ import functools
 import json
 from typing import Any
 
-from pydantic import BeforeValidator, field_validator
+from pydantic import BeforeValidator, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Annotated
 
@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     aws_region: str | None = Field(default=None)
     aws_secrets_manager_endpoint_url: str | None = Field(default=None)
     aws_secrets_manager_timeout_seconds: int = Field(default=5)
+
+    # Connector settings
+    connector_pool_size: int = Field(default=3, ge=1, le=20)
+    connector_max_overflow: int = Field(default=2, ge=0, le=20)
+    connector_pool_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    connector_pool_recycle_seconds: int = Field(default=900, ge=60, le=3600)
+    connector_connect_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    connector_test_statement_timeout_ms: int = Field(default=5000, ge=1000, le=30000)
+    connector_test_lock_timeout_ms: int = Field(default=2000, ge=500, le=10000)
+    connector_max_registered_pools: int = Field(default=50, ge=1, le=500)
+    connector_pool_idle_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    connector_application_name_prefix: str = Field(default="schemalens", pattern=r"^[a-zA-Z0-9_-]+$")
 
     @field_validator("database_url")
     @classmethod

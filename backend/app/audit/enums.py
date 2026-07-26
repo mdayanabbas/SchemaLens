@@ -72,6 +72,10 @@ class AuditAction(StrEnum):
     SECRET_RESOLVED = "secret.resolved"
     SECRET_RESOLUTION_FAILED = "secret.resolution_failed"
 
+    CONNECTION_TEST_SUCCEEDED = "connection.test_succeeded"
+    CONNECTION_TEST_FAILED = "connection.test_failed"
+
+
 class AuditEventSource(StrEnum):
     API = "api"
     BOOTSTRAP = "bootstrap"

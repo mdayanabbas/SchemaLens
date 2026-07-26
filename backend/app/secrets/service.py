@@ -119,3 +119,74 @@ class SecretResolutionService:
         ))
 
         return secret_value
+
+    async def resolve_secret_for_connector(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        provider_type: SecretProviderType,
+        reference: str,
+    ) -> SecretValue:
+        """
+        Resolve the secret internally for a connector operation.
+        Assumes authorization has already been performed by the caller.
+        """
+        provider = self.registry.get(provider_type)
+        
+        try:
+            secret_value = await provider.resolve(
+                organization_id=organization_id,
+                reference=reference
+            )
+        except Exception as e:
+            # Audit failure as SYSTEM
+            await self.audit_service.record_success(AuditEventCreate(
+                organization_id=organization_id,
+                actor_user_id=None,
+                actor_type=AuditActorType.SYSTEM,
+                action=AuditAction.SECRET_RESOLUTION_FAILED,
+                outcome=AuditOutcome.FAILED,
+                resource_type=AuditResourceType.DATABASE_CONNECTION,
+                resource_id=None,
+                metadata={
+                    "provider_type": provider_type,
+                    "resolution_status": "failed",
+                    "safe_error_code": getattr(e, "code", "SECRET_RESOLUTION_FAILED")
+                }
+            ))
+            raise
+
+        # Audit success as SYSTEM
+        fields_present = []
+        if secret_value.username: fields_present.append("username")
+        if secret_value.password: fields_present.append("password")
+        if secret_value.database: fields_present.append("database")
+        if secret_value.host: fields_present.append("host")
+        if secret_value.port: fields_present.append("port")
+        if secret_value.ssl_ca: fields_present.append("ssl_ca")
+        if secret_value.ssl_cert: fields_present.append("ssl_cert")
+        if secret_value.ssl_key: fields_present.append("ssl_key")
+
+        metadata: dict[str, Any] = {
+            "provider_type": provider_type,
+            "resolution_status": "succeeded",
+            "fields_present": fields_present
+        }
+        
+        if secret_value.expires_at:
+            metadata["expires_at"] = secret_value.expires_at.isoformat()
+            
+        metadata.update(secret_value.provider_metadata)
+
+        await self.audit_service.record_success(AuditEventCreate(
+            organization_id=organization_id,
+            actor_user_id=None,
+            actor_type=AuditActorType.SYSTEM,
+            action=AuditAction.SECRET_RESOLVED,
+            outcome=AuditOutcome.SUCCEEDED,
+            resource_type=AuditResourceType.DATABASE_CONNECTION,
+            resource_id=None,
+            metadata=metadata
+        ))
+
+        return secret_value

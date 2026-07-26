@@ -15,7 +15,21 @@ from app.schemas.health import LivenessResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.connectors.pool_registry import ConnectionPoolRegistry
+    
+    settings = get_settings()
+    pool_registry = ConnectionPoolRegistry(settings)
+    app.state.pool_registry = pool_registry
+
     yield
+
+    try:
+        await pool_registry.dispose_all()
+    except Exception as e:
+        import structlog
+        logger = structlog.get_logger(__name__)
+        logger.warning("pool_registry_dispose_failed", error=str(e))
+
     await engine.dispose()
 
 

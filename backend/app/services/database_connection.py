@@ -17,16 +17,23 @@ from app.schemas.database_connection import (
     DatabaseConnectionSummaryRead,
     DatabaseConnectionUpdate,
 )
+from app.connectors.pool_registry import ConnectionPoolRegistry
 from app.services.connection_validation import validate_production_ssl, redact_secret_reference
 from app.secrets.service import SecretResolutionService
 
 
 class DatabaseConnectionService:
-    def __init__(self, session: AsyncSession, audit_service: AuditService):
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit_service: AuditService,
+        pool_registry: ConnectionPoolRegistry | None = None
+    ):
         self.session = session
         self.repository = DatabaseConnectionRepository(session)
         self.audit_service = audit_service
         self.secret_resolution_service = SecretResolutionService(session, audit_service)
+        self.pool_registry = pool_registry
 
     async def create_connection(
         self,
@@ -242,6 +249,9 @@ class DatabaseConnectionService:
             connection.updated_by_user_id = context.user_id
             await self.repository.flush()
             
+            if self.pool_registry:
+                await self.pool_registry.dispose_for_connection(context.organization_id, connection.id)
+            
             actor_type = AuditActorType.PLATFORM_ADMIN if context.is_platform_admin else AuditActorType.USER
             await self.audit_service.record_success(AuditEventCreate(
                 organization_id=context.organization_id,
@@ -253,3 +263,4 @@ class DatabaseConnectionService:
                 resource_id=connection.id,
                 metadata={"connection_id": str(connection.id)}
             ))
+
