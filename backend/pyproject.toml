@@ -22,7 +22,10 @@ dependencies = [
     "pwdlib[argon2]>=0.2.0",
     "PyJWT>=2.8.0",
     "cryptography>=42.0.0",
+    "celery>=5.4.0",
+    "redis>=5.0.0",
 ]
+
 
 [project.optional-dependencies]
 dev = [

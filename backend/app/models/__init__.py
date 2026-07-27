@@ -17,6 +17,14 @@ from .connection_enums import (
 from .database_connection import DatabaseConnection
 from .connection_policy import ConnectionPolicy
 from .stored_secret import StoredSecret
+from .schema_scan_enums import (
+    SchemaScanStatus,
+    SchemaScanTrigger,
+    SchemaScanFailureStage,
+    SchemaScanWarningSeverity,
+)
+from .schema_scan import SchemaScan
+from .schema_scan_transition import SchemaScanTransition
 
 __all__ = [
     "Organization",
@@ -28,6 +36,8 @@ __all__ = [
     "DatabaseConnection",
     "ConnectionPolicy",
     "StoredSecret",
+    "SchemaScan",
+    "SchemaScanTransition",
     "OrganizationStatus",
     "UserStatus",
     "MembershipStatus",
@@ -41,4 +51,8 @@ __all__ = [
     "SecretProviderType",
     "SSLMode",
     "ApprovalMode",
+    "SchemaScanStatus",
+    "SchemaScanTrigger",
+    "SchemaScanFailureStage",
+    "SchemaScanWarningSeverity",
 ]
