@@ -79,6 +79,48 @@ class Settings(BaseSettings):
     connector_pool_idle_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     connector_application_name_prefix: str = Field(default="schemalens", pattern=r"^[a-zA-Z0-9_-]+$")
 
+    # Worker and Redis settings
+    redis_url: str = Field(default="redis://localhost:6379/0")
+    celery_broker_url: str = Field(default="redis://localhost:6379/1")
+    celery_result_backend: str = Field(default="redis://localhost:6379/2")
+    celery_task_always_eager: bool = Field(default=False)
+    celery_task_eager_propagates: bool = Field(default=True)
+    celery_task_acks_late: bool = Field(default=True)
+    celery_worker_prefetch_multiplier: int = Field(default=1, ge=1, le=10)
+    
+    schema_scan_queue_name: str = Field(default="schema-scans", pattern=r"^[a-zA-Z0-9_-]+$")
+    schema_scan_task_soft_time_limit_seconds: int = Field(default=600, ge=1)
+    schema_scan_task_hard_time_limit_seconds: int = Field(default=660, ge=1)
+    schema_scan_stale_after_seconds: int = Field(default=900, ge=1)
+    schema_scan_heartbeat_interval_seconds: int = Field(default=30, ge=1)
+    schema_scan_max_attempts: int = Field(default=3, ge=1, le=10)
+    schema_scan_max_requested_schemas: int = Field(default=100, ge=1, le=1000)
+    schema_scan_dispatch_timeout_seconds: int = Field(default=5, ge=1, le=30)
+
+    @field_validator("schema_scan_task_hard_time_limit_seconds")
+    @classmethod
+    def validate_hard_time_limit(cls, v: int, info: Any) -> int:
+        soft_limit = info.data.get("schema_scan_task_soft_time_limit_seconds")
+        if soft_limit is not None and v <= soft_limit:
+            raise ValueError("Hard time limit must exceed soft time limit")
+        return v
+
+    @field_validator("schema_scan_stale_after_seconds")
+    @classmethod
+    def validate_stale_threshold(cls, v: int, info: Any) -> int:
+        heartbeat = info.data.get("schema_scan_heartbeat_interval_seconds")
+        if heartbeat is not None and v <= heartbeat:
+            raise ValueError("Stale threshold must exceed heartbeat interval")
+        return v
+
+    @field_validator("celery_task_always_eager")
+    @classmethod
+    def validate_eager_mode(cls, v: bool, info: Any) -> bool:
+        env = info.data.get("app_environment")
+        if v and env == "production":
+            raise ValueError("Do not silently use eager mode in production")
+        return v
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:

@@ -182,6 +182,25 @@ async def get_connection_test_service(
     return ConnectionTestService(session, audit_service, connector_registry)
 
 
+async def get_schema_scan_service(
+    session: AsyncSession = Depends(get_database_session),
+    audit_service: "AuditService" = Depends(get_audit_service),
+) -> "SchemaScanService":
+    from app.services.schema_scan import SchemaScanService
+    from app.workers.dispatcher import CeleryTaskDispatcher
+    from app.workers.cancellation import TaskCancellationService
+    
+    dispatcher = CeleryTaskDispatcher()
+    cancellation_service = TaskCancellationService()
+    
+    return SchemaScanService(
+        session=session,
+        audit_service=audit_service,
+        dispatcher=dispatcher,
+        cancellation_service=cancellation_service,
+    )
+
+
 __all__ = [
     "get_database_session",
     "get_current_user",
@@ -193,5 +212,5 @@ __all__ = [
     "get_secret_resolution_service",
     "get_database_connection_service",
     "get_connection_test_service",
+    "get_schema_scan_service",
 ]
-

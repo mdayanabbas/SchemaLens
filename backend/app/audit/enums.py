@@ -75,6 +75,15 @@ class AuditAction(StrEnum):
     CONNECTION_TEST_SUCCEEDED = "connection.test_succeeded"
     CONNECTION_TEST_FAILED = "connection.test_failed"
 
+    SCHEMA_SCAN_REQUESTED = "schema_scan.requested"
+    SCHEMA_SCAN_DISPATCHED = "schema_scan.dispatched"
+    SCHEMA_SCAN_DISPATCH_FAILED = "schema_scan.dispatch_failed"
+    SCHEMA_SCAN_STARTED = "schema_scan.started"
+    SCHEMA_SCAN_FAILED = "schema_scan.failed"
+    SCHEMA_SCAN_CANCELLED = "schema_scan.cancelled"
+    SCHEMA_SCAN_CANCELLATION_REQUESTED = "schema_scan.cancellation_requested"
+    SCHEMA_SCAN_STALE_RECOVERED = "schema_scan.stale_recovered"
+
 
 class AuditEventSource(StrEnum):
     API = "api"

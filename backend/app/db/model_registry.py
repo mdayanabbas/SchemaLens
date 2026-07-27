@@ -14,6 +14,9 @@ from app.models import (
     User,
     DatabaseConnection,
     ConnectionPolicy,
+    StoredSecret,
+    SchemaScan,
+    SchemaScanTransition,
 )
 
 target_metadata = Base.metadata
