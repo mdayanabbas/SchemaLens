@@ -80,9 +80,13 @@ class AuditAction(StrEnum):
     SCHEMA_SCAN_DISPATCH_FAILED = "schema_scan.dispatch_failed"
     SCHEMA_SCAN_STARTED = "schema_scan.started"
     SCHEMA_SCAN_FAILED = "schema_scan.failed"
+    SCHEMA_SCAN_SUCCEEDED = "schema_scan.succeeded"
     SCHEMA_SCAN_CANCELLED = "schema_scan.cancelled"
     SCHEMA_SCAN_CANCELLATION_REQUESTED = "schema_scan.cancellation_requested"
     SCHEMA_SCAN_STALE_RECOVERED = "schema_scan.stale_recovered"
+    
+    SCHEMA_INTROSPECTION_STARTED = "schema_introspection.started"
+    SCHEMA_SNAPSHOT_READY = "schema_snapshot.ready"
 
 
 class AuditEventSource(StrEnum):

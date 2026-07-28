@@ -233,6 +233,52 @@ class PostgreSQLConnector(DatabaseConnector):
         finally:
             await engine.dispose()
 
+    async def introspect_schema(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        connection: DatabaseConnection,
+        policy: ConnectionPolicy,
+        schemas: list[str],
+        cancellation_check: callable | None = None,
+        progress_callback: callable | None = None,
+    ):
+        from app.connectors.postgres.introspector import PostgreSQLSchemaIntrospector
+
+        self._validate_context(organization_id, connection, policy)
+
+        introspector = PostgreSQLSchemaIntrospector(self.settings)
+
+        # For introspection, create a temporary engine in METADATA mode
+        secret = await self.secret_resolution_service.resolve_secret_for_connector(
+            provider_type=connection.secret_provider,
+            reference=connection.secret_reference,
+            organization_id=organization_id,
+        )
+
+        try:
+            engine = await self.engine_factory.create_engine(
+                connection=connection,
+                secret=secret,
+                mode=ConnectorMode.METADATA,
+            )
+        except ConnectorConfigurationError:
+            raise
+        except Exception as e:
+            logger.error("engine_creation_failed", error=str(e), connection_id=str(connection.id))
+            raise ConnectorConfigurationError("Failed to configure external connection.", details={"safe_error_code": "CONNECTOR_CONFIGURATION_ERROR"})
+
+        try:
+            return await introspector.introspect(
+                engine=engine,
+                approved_schemas=schemas,
+                policy=policy,
+                cancellation_check=cancellation_check,
+                progress_callback=progress_callback,
+            )
+        finally:
+            await engine.dispose()
+
     async def dispose_connection_pool(
         self,
         *,

@@ -51,8 +51,22 @@ class DatabaseConnector(ABC):
         Properly quote a SQL identifier for the dialect.
         """
 
+    @abstractmethod
+    async def introspect_schema(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        connection: DatabaseConnection,
+        policy: ConnectionPolicy,
+        schemas: list[str],
+        cancellation_check: callable | None = None,
+        progress_callback: callable | None = None,
+    ):
+        """
+        Extract schema metadata from the target database for the specified namespaces.
+        """
+
     # Future methods to be implemented:
-    # introspect_schema
     # explain_query
     # create_read_only_session
     # execute_query_stream
