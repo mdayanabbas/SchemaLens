@@ -17,6 +17,16 @@ from app.models import (
     StoredSecret,
     SchemaScan,
     SchemaScanTransition,
+    SchemaSnapshot,
+    SchemaNamespace,
+    SchemaRelation,
+    SchemaColumn,
+    SchemaConstraint,
+    SchemaConstraintColumn,
+    SchemaIndex,
+    SchemaIndexColumn,
+    SchemaRoutine,
+    ConnectionSchemaState,
 )
 
 target_metadata = Base.metadata

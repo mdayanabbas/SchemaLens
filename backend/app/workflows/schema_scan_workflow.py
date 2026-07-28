@@ -72,13 +72,103 @@ class SchemaScanWorkflow:
         if await self.check_cancellation(scan=scan):
             return
 
-        # Introspection placeholder - intentionally controlled failure for Brick 11
-        await self.fail_scan(
+        # Setup connectors and services
+        from app.connectors.registry import get_connector_for_dialect
+        from app.services.schema_snapshot_persistence import SchemaSnapshotPersistenceService
+
+        connection = await self.conn_repo.get_by_id_for_organization(connection_id, organization_id)
+        policy = await self.policy_repo.get_by_connection_id_for_organization(connection_id, organization_id)
+        
+        if not connection or not policy:
+            # Caught by validate_worker_eligibility already, but just in case
+            return
+            
+        connector = get_connector_for_dialect(connection.dialect)
+        
+        async def cancel_check():
+            if await self.check_cancellation(scan=scan):
+                raise asyncio.CancelledError("Scan cancelled during introspection.")
+                
+        async def progress_cb(phase: str, current: int, total: int):
+            scan.progress_phase = f"introspecting_{phase}"
+            await self.update_heartbeat(scan=scan)
+            
+        # 1. Introspection Phase
+        try:
+            introspection_result = await connector.introspect_schema(
+                organization_id=organization_id,
+                connection=connection,
+                policy=policy,
+                schemas=scan.requested_schemas_json,
+                cancellation_check=cancel_check,
+                progress_callback=progress_cb,
+            )
+        except asyncio.CancelledError:
+            return
+        except AppError as e:
+            await self.fail_scan(
+                scan=scan,
+                failure_stage=SchemaScanFailureStage.INTROSPECTION,
+                error_code=e.code,
+                error_message=e.message,
+            )
+            return
+        except Exception as e:
+            await self.fail_scan(
+                scan=scan,
+                failure_stage=SchemaScanFailureStage.INTROSPECTION,
+                error_code="SCHEMA_INTROSPECTION_ERROR",
+                error_message=str(e),
+            )
+            return
+            
+        # 2. Persistence Phase
+        scan.progress_phase = "persisting_snapshot"
+        await self.update_heartbeat(scan=scan)
+        
+        try:
+            persistence_service = SchemaSnapshotPersistenceService(self.session, self.settings)
+            snapshot = await persistence_service.persist_and_promote(
+                organization_id=organization_id,
+                connection_id=connection_id,
+                scan_id=scan.id,
+                introspection_result=introspection_result
+            )
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            await self.fail_scan(
+                scan=scan,
+                failure_stage=SchemaScanFailureStage.SNAPSHOT_PERSISTENCE,
+                error_code="SNAPSHOT_PERSISTENCE_FAILED",
+                error_message=str(e),
+            )
+            return
+            
+        # 3. Finalize
+        scan.progress_phase = "completed"
+        scan.completed_at = self._now()
+        
+        final_status = SchemaScanStatus.PARTIALLY_SUCCEEDED if introspection_result.warnings else SchemaScanStatus.SUCCEEDED
+        
+        await self.state_machine.transition(
             scan=scan,
-            failure_stage=SchemaScanFailureStage.INTROSPECTION,
-            error_code="SCHEMA_INTROSPECTION_NOT_IMPLEMENTED",
-            error_message="Schema introspection is not implemented in the current build.",
+            to_status=final_status,
+            actor_type=AuditActorType.WORKER,
+            actor_user_id=None,
+            reason_code="WORKER_SUCCEEDED",
         )
+        
+        await self.audit_service.record_success(AuditEventCreate(
+            organization_id=scan.organization_id,
+            actor_user_id=None,
+            actor_type=AuditActorType.WORKER,
+            action=AuditAction.SCHEMA_SCAN_SUCCEEDED,
+            outcome=AuditOutcome.SUCCEEDED,
+            resource_type=AuditResourceType.SCHEMA_SCAN,
+            resource_id=scan.id,
+            metadata={"snapshot_id": str(snapshot.id)}
+        ))
 
     async def claim_scan(
         self, *, scan_id: uuid.UUID, organization_id: uuid.UUID

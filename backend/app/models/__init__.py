@@ -25,6 +25,26 @@ from .schema_scan_enums import (
 )
 from .schema_scan import SchemaScan
 from .schema_scan_transition import SchemaScanTransition
+from .schema_snapshot_enums import (
+    SchemaSnapshotStatus,
+    SchemaRelationKind,
+    SchemaConstraintKind,
+    ReferentialAction,
+    MatchType,
+    SortDirection,
+    NullsOrder,
+    SchemaObjectType,
+)
+from .schema_snapshot import SchemaSnapshot
+from .schema_namespace import SchemaNamespace
+from .schema_relation import SchemaRelation
+from .schema_column import SchemaColumn
+from .schema_constraint import SchemaConstraint
+from .schema_constraint_column import SchemaConstraintColumn
+from .schema_index import SchemaIndex
+from .schema_index_column import SchemaIndexColumn
+from .schema_routine import SchemaRoutine
+from .connection_schema_state import ConnectionSchemaState
 
 __all__ = [
     "Organization",
@@ -55,4 +75,22 @@ __all__ = [
     "SchemaScanTrigger",
     "SchemaScanFailureStage",
     "SchemaScanWarningSeverity",
+    "SchemaSnapshot",
+    "SchemaNamespace",
+    "SchemaRelation",
+    "SchemaColumn",
+    "SchemaConstraint",
+    "SchemaConstraintColumn",
+    "SchemaIndex",
+    "SchemaIndexColumn",
+    "SchemaRoutine",
+    "ConnectionSchemaState",
+    "SchemaSnapshotStatus",
+    "SchemaRelationKind",
+    "SchemaConstraintKind",
+    "ReferentialAction",
+    "MatchType",
+    "SortDirection",
+    "NullsOrder",
+    "SchemaObjectType",
 ]

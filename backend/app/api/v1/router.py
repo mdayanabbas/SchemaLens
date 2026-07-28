@@ -8,6 +8,7 @@ from app.api.v1.endpoints import audit
 from app.api.v1.endpoints import connections
 from app.api.v1.endpoints import secrets
 from app.api.v1.endpoints import schema_scans
+from app.api.v1.endpoints import schema_snapshots
 
 api_router = APIRouter()
 
@@ -19,3 +20,4 @@ api_router.include_router(audit.router, prefix="/organizations/current/audit-eve
 api_router.include_router(connections.router, prefix="/organizations/current/connections", tags=["Connections"])
 api_router.include_router(secrets.router, prefix="/organizations/current/secrets", tags=["Secrets"])
 api_router.include_router(schema_scans.router, prefix="/organizations/current", tags=["Schema Scans"])
+api_router.include_router(schema_snapshots.router, prefix="/organizations/current", tags=["Schema Snapshots"])

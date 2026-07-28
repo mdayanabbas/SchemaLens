@@ -79,6 +79,22 @@ class Settings(BaseSettings):
     connector_pool_idle_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     connector_application_name_prefix: str = Field(default="schemalens", pattern=r"^[a-zA-Z0-9_-]+$")
 
+    # Schema Introspection
+    schema_introspection_statement_timeout_ms: int = Field(default=30000, ge=1000)
+    schema_introspection_lock_timeout_ms: int = Field(default=3000, ge=500)
+    schema_introspection_max_schemas: int = Field(default=100, ge=1)
+    schema_introspection_max_relations: int = Field(default=5000, ge=1)
+    schema_introspection_max_columns: int = Field(default=50000, ge=1)
+    schema_introspection_max_constraints: int = Field(default=20000, ge=1)
+    schema_introspection_max_indexes: int = Field(default=20000, ge=1)
+    schema_introspection_max_index_columns: int = Field(default=100000, ge=1)
+    schema_introspection_max_routines: int = Field(default=5000, ge=1)
+    schema_introspection_batch_size: int = Field(default=500, ge=1)
+    schema_introspection_max_comment_length: int = Field(default=2000, ge=1)
+    schema_introspection_max_default_expression_length: int = Field(default=2000, ge=1)
+    schema_snapshot_max_metadata_bytes: int = Field(default=52428800, ge=1)
+    schema_snapshot_persistence_batch_size: int = Field(default=1000, ge=1, le=10000)
+
     # Worker and Redis settings
     redis_url: str = Field(default="redis://localhost:6379/0")
     celery_broker_url: str = Field(default="redis://localhost:6379/1")
